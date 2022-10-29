@@ -1,7 +1,13 @@
-# GameSensical Lua optimizer
+# luaswift (gamesense lua optimizer reworked)
+![chuj | kurwa](https://files.catbox.moe/p48el8.svg) 
+
 Simple web tool that replaces calls to global functions with calls to local functions and generates a single line of local variable assignments at the top
 
-![preview](https://i.imgur.com/6IpEVVM.png)
+Fixed goto parsing, changed lua version to LuaJIT, fixed neverlose compatibility and updated luaparse.
+
+If you encounter any bugs, please contact me in [Telegram](https://t.me/run1t).
+
+![preview](https://i.imgur.com/hpFtnDF.png)
 
 ## How it works:
 It properly parses the source code (using luaparse) and traverses the AST, detects calls, checks if they're not already defined in the script somewhere and generates that localization line based on that.
@@ -12,5 +18,5 @@ Then it also replaces the 'dot-syntax' with the 'underscore-syntax'. you can jus
 ## Technologies used:
 - [materialize.css](https://github.com/Dogfalo/materialize)
 - [luaparse](https://github.com/oxyc/luaparse)
-- [ace (editor)](https://github.com/ajaxorg/ace) with the 'Darcula' theme
+- [ace (editor)](https://github.com/ajaxorg/ace)
 - [lua-beautifier](https://github.com/dptole/lua-beautifier)
