@@ -181,19 +181,18 @@ uniform vec4 u_g1;
 uniform vec4 u_g2;
 uniform vec4 u_g3;
 
-// --- настройки (по статье) ---
-#define LENS_ZONE   0.30   // inversedSDF / 0.3 — ширина линзовой зоны
-#define ABERRATION  3.5    // сила хроматической аберрации, px
+#define LENS_ZONE   0.32   // ширина линзового кольца, доля min(w,h)
+#define LENS_MAX_PX 56.0   // и жёсткий потолок в пикселях
+#define ABERRATION  3.5    // хроматическая аберрация, px
 #define BLUR_I      2.2    // blurIntensity
-#define TINT        0.92   // затемнение стекла (в статье 0.90)
-#define SPEC        0.10   // яркость грани (было 0.38 — отсюда белый кант)
+#define TINT        0.92   // тонировка стекла
+#define SPEC        0.10   // яркость грани
 
 vec3 getTex(vec2 c){
   vec2 uv = clamp(c / u_res, vec2(0.0015), vec2(0.9985));
   return texture2D(u_bg, vec2(uv.x, 1.0 - uv.y)).rgb;
 }
 
-// гауссово ядро 5x5, как в статье
 vec3 getBlurred(vec2 coord, float r){
   vec3 col = vec3(0.0);
   float tw = 0.0;
@@ -213,7 +212,6 @@ float sdf(vec2 p, vec2 b, float r){
   return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;
 }
 
-// направление искажения = нормаль SDF (правка статьи: там normalize(glassCoord))
 vec2 sdfNormal(vec2 p, vec2 b, float r){
   vec2 e = vec2(1.0, 0.0);
   vec2 g = vec2(
@@ -237,34 +235,38 @@ vec4 glass(vec2 fc, vec4 g){
   float mask = 1.0 - smoothstep(-1.0, 1.0, d);
   if (mask <= 0.002) return vec4(0.0);
 
-  float inversedSDF = -d / size;                 // 0 на кромке ... 0.5 в центре
-  vec2  n           = sdfNormal(gc, b, radius);  // наружу
+  float depth = max(-d, 0.0);                     // расстояние до кромки, px
+  vec2  n     = sdfNormal(gc, b, radius);         // нормаль наружу
 
-  // Step 3: линза 1 - sqrt(1 - x^2)
-  float distFromCenter = 1.0 - clamp(inversedSDF / LENS_ZONE, 0.0, 1.0);
-  float distortion     = 1.0 - sqrt(1.0 - distFromCenter * distFromCenter);
-  vec2  offset         = distortion * n * (size * 0.5);
-  vec2  cc             = fc - offset;            // минус => увеличение, как в статье
+  // линзовое кольцо задаётся в ПИКСЕЛЯХ, а не в долях панели
+  float band  = min(size * LENS_ZONE, LENS_MAX_PX);
+  float t     = clamp(depth / band, 0.0, 1.0);    // 0 на кромке, 1 внутри
+  float distFromCenter = 1.0 - t;
 
-  // Step 5: блюр сильнее в центре, слабее у края
+  // профиль линзы из статьи
+  float distortion = 1.0 - sqrt(1.0 - distFromCenter * distFromCenter);
+
+  // ВАЖНО: смещение НАРУЖУ и не больше ширины кольца ->
+  // кромка втягивает окружение, а содержимое под стеклом не пропадает
+  vec2 offset = distortion * n * band;
+  vec2 cc     = fc + offset;
+
   float blurRadius = BLUR_I * (1.0 - distFromCenter * 0.5);
 
-  // Step 4: edge-only хроматическая аберрация
-  float edge  = smoothstep(0.0, 0.02, inversedSDF);
-  vec2  shift = n * edge * ABERRATION * (0.25 + 0.75 * distFromCenter);
+  // edge-only хроматическая аберрация
+  vec2 shift = n * ABERRATION * (0.2 + 0.8 * distFromCenter);
 
   vec3 col = vec3(
-    getBlurred(cc - shift, blurRadius).r,   // R бликует меньше -> тянется внутрь
-    getBlurred(cc,         blurRadius).g,   // G — опорный
-    getBlurred(cc + shift, blurRadius).b    // B преломляется сильнее -> наружу
+    getBlurred(cc - shift, blurRadius).r,
+    getBlurred(cc,         blurRadius).g,
+    getBlurred(cc + shift, blurRadius).b
   );
 
-  col *= TINT;                               // тонировка стекла
+  col *= TINT;
 
-  // мягкая грань вместо белого канта: свет сверху-слева, тень снизу-справа
-  float rimPx = max(-d, 0.0);
-  float rim   = smoothstep(2.5, 0.0, rimPx);
-  float ndl   = dot(n, normalize(vec2(-0.5, 0.86)));
+  // мягкая грань: свет сверху-слева, лёгкая тень снизу-справа
+  float rim = smoothstep(2.5, 0.0, depth);
+  float ndl = dot(n, normalize(vec2(-0.5, 0.86)));
   col += rim * pow(max(ndl, 0.0), 1.5) * SPEC;
   col *= 1.0 - rim * max(-ndl, 0.0) * 0.08;
 
